@@ -2,12 +2,396 @@
 
 **Learning objectives:**
 
-- THESE ARE NICE TO HAVE BUT NOT ABSOLUTELY NECESSARY
+- Introduce the concept of stacking
+- Explain how stacking works
+- Discuss the advantages and disadvantages of stacking
+- Provide examples of how stacking has been used in practice using **h2o**
 
-## SLIDE 1 {-}
+## Base idea {-}
 
-- ADD SLIDES AS SECTIONS (`##`).
-- TRY TO KEEP THEM RELATIVELY SLIDE-LIKE; THESE ARE NOTES, NOT THE BOOK ITSELF.
+- Imagine you have a group of *individual learners* who are trying to solve a problem. Each learner has its own strengths and weaknesses, and they may not agree on the best solution. How can you combine their opinions and get the most out of them? This is the idea behind **stacking**.
+
+![](chapter-img/15_chapter/01-2-robots.jfif)
+
+- **Stacking** is a technique that uses a *combiner* to merge the predictions of several *individual learners* or **base learners**. The *combiner* is also known as **meta algorithm** or **super learner**, because it learns from the other learners and produces a superior prediction.
+
+![](chapter-img/15_chapter/02-stack-models.jfif)
+
+- This technique was introduced by Leo Breiman in **1996**, but it was considered as a **black art** until **2007**, when Van der Laan, Polley, and Hubbard developed its theoretical background. They showed that stacking **can achieve optimal performance** when base learners present **high variability** and **uncorrelated predicted** values. 
+
+under certain conditions, and they provided practical guidelines for its implementation.
+
+![](chapter-img/15_chapter/03-paper-doubts.jfif)
+
+## Setting enviroment {-}
+
+**Loading libraries**
+
+```{r libraries, message=FALSE, echo=TRUE, results='hide'}
+# Helper packages
+#  For creating our train-test splits
+library(rsample)
+#  For minor feature engineering tasks
+library(recipes)
+
+# Modeling packages
+library(h2o)
+h2o.init(max_mem_size = "8g")
+```
+
+**Getting our training set**
+
+```{r getting-data, message=FALSE}
+# Load and split the Ames housing data
+ames <- AmesHousing::make_ames()
+
+# for reproducibility
+set.seed(123)  
+split <- initial_split(ames, strata = "Sale_Price")
+ames_train <- training(split)
+ames_test <- testing(split)
+```
+
+**Loading data to h2o session**
+
+```{r h2o_data, message=FALSE, echo=TRUE, results='hide'}
+# Make sure we have consistent categorical levels
+blueprint <- recipe(Sale_Price ~ .,
+                    data = ames_train) %>%
+  step_other(all_nominal(),
+             threshold = 0.005)
+
+# Create training set for h2o
+train_h2o <- prep(blueprint,
+                  training = ames_train,
+                  retain = TRUE) %>%
+  juice() %>%
+  as.h2o()
+
+# Create testing set for h2o
+test_h2o <- prep(blueprint,
+                 training = ames_train) %>%
+  bake(new_data = ames_test) %>%
+  as.h2o()
+
+# Get response and feature names
+Y <- "Sale_Price"
+X <- setdiff(names(ames_train), Y)
+```
+
+## Process Description
+
+1. Set up the ensemble by
+  - Defining a list $L$ of tuned based learners
+  - Defining a meta learner algorithm (usually *some form of regularized regression*)
+  
+2. Train the ensemble by
+  - Training each base learner
+  - Performing **k-fold CV** on each of the base learners and collect the cross-validated predictions from each, to avoid **overfitting** as they would be predicting **new data**.
+  - Creating the $Z$ feature matrix of $N \times L$ known as "level-one"
+  - Training the meta learning algorithm on the level-one data $y = f(Z)$
+  
+3. To make predicts
+  - Generate predictions from each base learner
+  - Feed those predictions into the meta learner to generate the ensemble prediction
+  
+
+## R packages available
+
+| Package | Description | Availability | Algorithm | Parallelization |
+|---------|-------------|--------------|-----------|-----------------|
+| stacks  | An R package for model stacking that aligns with the tidymodels. It uses a regularized linear model to combine predictions from ensemble members. | CRAN and GitHub | Super Learner | No |
+| SuperLearner | An R package that provides the original Super Learner and includes a clean interface to 30+ algorithms. | CRAN and GitHub | Super Learner | No |
+| subsemble | An R package that provides stacking via the super learner algorithm and also implements the subsemble algorithm. | GitHub only | Super Learner and Subsemble | Yes |
+| caretEnsemble | An R package that provides an approach for stacking, but it implements a bootstrapped version of stacking. | CRAN and GitHub | Bootstrap Stacking | No |
+| h2o    | An R package that provides an efficient implementation of stacking and allows you to stack existing base learners, stack a grid search, and also implements an automated machine learning search with stacked results. | CRAN and GitHub | Stacked Ensembles and AutoML | Yes |
+
+## Model Training Process
+
+1. Train each base model using the same seed (`seed = 123`), fold assignment (`fold_assignment = "Modulo"`) and saving the cross-validated predictions (`keep_cross_validation_predictions = TRUE`).
+
+```{r train-base-learners}
+# Regularized regression base learner
+best_glm <- h2o.glm(
+  x = X,
+  y = Y,
+  training_frame = train_h2o,
+  alpha = 0.1,
+  remove_collinear_columns = TRUE,
+  nfolds = 10,
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  seed = 123
+)
+
+# Random forest base learner
+best_rf <- h2o.randomForest(
+  x = X,
+  y = Y,
+  training_frame = train_h2o,
+  ntrees = 1000,
+  mtries = 20,
+  max_depth = 30,
+  min_rows = 1,
+  sample_rate = 0.8,
+  nfolds = 10,
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  seed = 123,
+  stopping_rounds = 50,
+  stopping_metric = "RMSE",
+  stopping_tolerance = 0
+)
+
+
+# GBM base learner
+best_gbm <- h2o.gbm(
+  x = X,
+  y = Y,
+  training_frame = train_h2o,
+  ntrees = 5000,
+  learn_rate = 0.01,
+  max_depth = 7,
+  min_rows = 5,
+  sample_rate = 0.8,
+  nfolds = 10,
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  seed = 123,
+  stopping_rounds = 50,
+  stopping_metric = "RMSE",
+  stopping_tolerance = 0
+)
+
+# XGBoost base learner
+#   We cannot run this under Windows
+```
+
+
+2. Set up the ensemble by
+  - Defining a list $L$ of tuned based learners
+  - Defining a metalearner algorithm
+
+```{r stacked-model, message=FALSE, echo=TRUE, results='hide'}
+# Stacked model
+ensemble_tree <- h2o.stackedEnsemble(
+  x = X,
+  y = Y,
+  training_frame = train_h2o,
+  model_id = "my_tree_ensemble",
+  base_models = list(best_glm, best_rf, best_gbm),
+  # Meta learner: random forest
+  metalearner_algorithm = "drf"
+)
+```
+
+3. Explore models correlations
+
+```{r}
+ModelList <- list(
+  glm = best_glm,
+  rf = best_rf,
+  gbm = best_gbm
+)
+
+extract_cv <- function(x){
+  x@model$cross_validation_holdout_predictions_frame_id$name |>
+    h2o.getFrame() |>
+    as.vector()
+}
+
+lapply(ModelList, extract_cv) |>
+  as.data.frame() |>
+  cor()
+  
+```
+
+As we can see the models show very similar results, so this case isn't the best one to perform a stacking model.
+
+4. Comparing model performance
+
+```{r}
+# Defining the rmse function
+get_rmse <- function(model) {
+  results <- h2o.performance(model, newdata = test_h2o)
+  results@metrics$RMSE
+}
+
+# Get results from base learners
+BaseLearnersRmse <- sapply(ModelList, get_rmse)
+BaseLearnersRmse
+
+# Stacked results
+StackRmse <- get_rmse(ensemble_tree)
+StackRmse
+
+# Ratio
+StackRmse/BaseLearnersRmse
+```
+
+## Alternative Model Training Process
+
+Rather than using a tuned base learner we could **stack multiple models generated from the same base learner** and allow the super learner to perform to tuning process.
+
+1. Create a grid of paraterms to tune.
+
+```{r}
+# Define GBM hyperparameter grid
+hyper_grid <- list(
+  max_depth = c(1, 3, 5),
+  min_rows = c(1, 5, 10),
+  learn_rate = c(0.01, 0.05, 0.1),
+  learn_rate_annealing = c(0.99, 1),
+  sample_rate = c(0.5, 0.75, 1),
+  col_sample_rate = c(0.8, 0.9, 1)
+)
+```
+
+
+2. Define control parameters
+
+```{r}
+search_criteria <- list(
+  # Perform a random search of all the combinations
+  strategy = "RandomDiscrete",
+  # And stop after reaching the maximum number of models
+  max_models = 25
+)
+```
+
+3. Measure the performance of each model
+
+```{r train-untuned-base-learners, message=FALSE, echo=TRUE, results='hide'}
+# Build random grid search 
+random_grid <- h2o.grid(
+  algorithm = "gbm", 
+  grid_id = "gbm_grid", 
+  x = X, 
+  y = Y,
+  training_frame = train_h2o,
+  hyper_params = hyper_grid,
+  search_criteria = search_criteria,
+  ntrees = 5000,
+  stopping_metric = "RMSE",     
+  stopping_rounds = 10,
+  stopping_tolerance = 0,
+  nfolds = 10, 
+  fold_assignment = "Modulo",
+  keep_cross_validation_predictions = TRUE,
+  seed = 123
+)
+```
+
+4. Arrange the models by performance
+
+```{r}
+# Sort results by RMSE
+h2o.getGrid(
+  grid_id = "gbm_grid", 
+  sort_by = "rmse"
+)
+```
+
+5. Train the stacked model
+
+```{r train-stacked-gbm, message=FALSE, echo=TRUE, results='hide'}
+# Train a stacked ensemble using the GBM grid
+ensemble <- h2o.stackedEnsemble(
+  x = X,
+  y = Y,
+  training_frame = train_h2o,
+  model_id = "ensemble_gbm_grid",
+  base_models = random_grid@model_ids,
+  metalearner_algorithm = "gbm"
+)
+```
+
+6. Compare the tuned model vs the stacked model
+
+```{r}
+# Tuned model
+random_grid@model_ids[[1]] |>
+  h2o.getModel() |>
+  h2o.performance(newdata = test_h2o)
+
+# Stacked model
+h2o.performance(ensemble, newdata = test_h2o)
+
+h2o.shutdown(prompt = FALSE)
+```
+
+## Automated machine learning
+
+It involves performing an automated search across multiple base learners and then stack the resulting models.
+
+| Functionality | Commercial Products | Open Source Solutions |
+| --- | --- | --- |
+| Feature Engineering | Yes | Limited |
+| Model Selection | Yes | Yes |
+| Hyperparameter Optimization | Yes | Yes |
+| Model Validation Procedures | Yes | Limited |
+| Comparison of Model Performance | Yes | Yes |
+
+The AutoML provides us **direction for further analysis**, as it can explore which models fits better with data as we use that time to perform other tasks.
+
+```{r automl, eval=FALSE}
+# Use AutoML to find a list of candidate models (i.e., leaderboard)
+auto_ml <- h2o.automl(
+  x = X,
+  y = Y,
+  training_frame = train_h2o,
+  nfolds = 5, 
+  max_runtime_secs = 60 * 120, # 2 hour limit
+  max_models = 50,
+  keep_cross_validation_predictions = TRUE,
+  sort_metric = "RMSE",
+  seed = 123,
+  stopping_rounds = 50,
+  stopping_metric = "RMSE",
+  stopping_tolerance = 0
+)
+
+# Assess the leader board; the following truncates the results to show the top 
+# and bottom 15 models. You can get the top model with auto_ml@leader
+auto_ml@leaderboard %>% 
+  as.data.frame() %>%
+  subset(select = c(model_id, rmse)) %>%
+  rbind(head(., 15L),
+        tail(., 15L))
+##                                               model_id   rmse
+## 1                     XGBoost_1_AutoML_20190220_084553   22229.97
+## 2            GBM_grid_1_AutoML_20190220_084553_model_1   22437.26
+## 3            GBM_grid_1_AutoML_20190220_084553_model_3   22777.57
+## 4                         GBM_2_AutoML_20190220_084553   22785.60
+## 5                         GBM_3_AutoML_20190220_084553   23133.59
+## 6                         GBM_4_AutoML_20190220_084553   23185.45
+## 7                     XGBoost_2_AutoML_20190220_084553   23199.68
+## 8                     XGBoost_1_AutoML_20190220_075753   23231.28
+## 9                         GBM_1_AutoML_20190220_084553   23326.57
+## 10           GBM_grid_1_AutoML_20190220_075753_model_2   23330.42
+## 11                    XGBoost_3_AutoML_20190220_084553   23475.23
+## 12       XGBoost_grid_1_AutoML_20190220_084553_model_3   23550.04
+## 13      XGBoost_grid_1_AutoML_20190220_075753_model_15   23640.95
+## 14       XGBoost_grid_1_AutoML_20190220_084553_model_8   23646.66
+## 15       XGBoost_grid_1_AutoML_20190220_084553_model_6   23682.37
+## ...                                                ...        ...
+## 65           GBM_grid_1_AutoML_20190220_084553_model_5   33971.32
+## 66           GBM_grid_1_AutoML_20190220_075753_model_8   34489.39
+## 67  DeepLearning_grid_1_AutoML_20190220_084553_model_3   36591.73
+## 68           GBM_grid_1_AutoML_20190220_075753_model_6   36667.56
+## 69      XGBoost_grid_1_AutoML_20190220_084553_model_13   40416.32
+## 70           GBM_grid_1_AutoML_20190220_075753_model_9   47744.43
+## 71    StackedEnsemble_AllModels_AutoML_20190220_084553   49856.66
+## 72    StackedEnsemble_AllModels_AutoML_20190220_075753   59127.09
+## 73 StackedEnsemble_BestOfFamily_AutoML_20190220_084553   76714.90
+## 74 StackedEnsemble_BestOfFamily_AutoML_20190220_075753   76748.40
+## 75           GBM_grid_1_AutoML_20190220_075753_model_5   78465.26
+## 76           GBM_grid_1_AutoML_20190220_075753_model_3   78535.34
+## 77           GLM_grid_1_AutoML_20190220_075753_model_1   80284.34
+## 78           GLM_grid_1_AutoML_20190220_084553_model_1   80284.34
+## 79       XGBoost_grid_1_AutoML_20190220_075753_model_4   92559.44
+## 80      XGBoost_grid_1_AutoML_20190220_075753_model_10  125384.88
+```
 
 ## Meeting Videos {-}
 

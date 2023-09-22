@@ -349,7 +349,7 @@ p4 <- pdp::partial(cv_glmnet, pred.var = "Garage_Cars") %>%
   geom_line() +
   scale_y_continuous(limits = c(0, 300000), labels = scales::dollar)
 
-grid.arrange(p1, p2, p3, p4, nrow = 2)
+gridExtra::grid.arrange(p1, p2, p3, p4, nrow = 2)
 ```
 
 However, not that one of the top 20 most influential variables is `Overall_QualPoor`.
