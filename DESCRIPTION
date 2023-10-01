@@ -12,6 +12,7 @@ Imports:
     bookdown,
     broom,
     caret,
+    DALEX,
     DataExplorer,
     doParallel,
     dplyr,
@@ -22,10 +23,12 @@ Imports:
     glmnet,
     gridExtra,
     h2o,
+    iml,
     ipred,
     janitor,
     kableExtra,
     knitr,
+    lime,
     modeldata,
     moments,
     parsnip,
@@ -47,6 +50,7 @@ Imports:
     vip,
     visdat,
     workflows,
+    xgboost,
     yardstick
 Remotes:
     grantmcdermott/parttree
