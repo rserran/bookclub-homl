@@ -10,11 +10,13 @@ knitr::opts_chunk$set(
 
 1. Understand the importance of interpretability in machine learning models.
 2. Learn about global and local interpretation.
-3. Understand the trade-off in interpretation.
-4. Learn about model-specific implementation.
+3. Understand the trade-off between interpretation and performance.
+4. Learn about model-specific and model-agnostic methods.
 5. Understand the concept of permutation-based feature importance.
 6. Understand the concept of partial dependence.
 7. Learn about Individual Conditional Expectation (ICE).
+8. Explain different methods to find interactions.
+9. Explain the main features for local observations.
 
 ## Introduction
 
@@ -436,7 +438,7 @@ ICE plots can help to **highlight interactions between features** by showing the
 
 ### Implementation
 
-```{r}
+```{r 16-c-ICE-curve}
 # Construct c-ICE curves
 partial(
   ensemble_tree,
@@ -455,7 +457,377 @@ partial(
 
 > **PDPs**, **ICE curves** and **c-ICE curves** for classification models are typically plotted on a **logit-type scale** to facilitate interpretation.
 
-```{r}
+## Feature interactions
+
+Most of the relationships between features and some response variable are complex and include **interactions**, but identifying and **understanding the nature** of these interactions can be a challenge, but a number of recent empirical studies have shown that interactions can be uncovered by flexible models.
+
+> Two or more predictors are said to interact if their **combined effect is different** (less or greater) than what we would expect if we were to add the impact of each of their effects when considered alone.
+
+*by Max Kuhn and Kjell Johnson*
+
+The **interaction strength** ($H$-statistic or $\rho$) is to measure how much of the ***variation of the predicted outcome** depends on the interaction of the features using the  **partial dependence values** for the features of interest. 
+
+- $\rho = 0$: When there is no interaction at all.
+- $\rho = 1$: If all of variation depends on a given interaction.
+
+We can explore the interaction between:
+
+
+1. **A feature and all other features**
+
+```
+1. For variable i in {1,...,p} do
+     | f(x) = estimate predicted values with original model
+     | pd(x) = partial dependence of variable i
+     | pd(!x) = partial dependence of all features excluding i (computationally expensive)
+     | upper = sum(f(x) - pd(x) - pd(!x))
+     | lower = variance(f(x))
+     | rho = upper / lower
+   End
+2. Sort variables by descending rho (interaction strength)  
+```
+
+2. **2 features**
+
+```
+1. i = a selected variable of interest
+2. For remaining variables j in {1,...,p} do
+     | pd(ij) = interaction partial dependence of variables i and j
+     | pd(i) = partial dependence of variable i
+     | pd(j) = partial dependence of variable j
+     | upper = sum(pd(ij) - pd(i) - pd(j))
+     | lower = variance(pd(ij))
+     | rho = upper / lower
+   End
+3. Sort interaction relationship by descending rho (interaction strength) 
+```
+
+### Implementation
+
+
+**A feature and all other features**
+
+> Computing the one-way interaction $H$-statistic took two hours to complete
+
+```{r 16-one-all-interactions}
+interact <- Interaction$new(components_iml)
+
+interact$results %>% 
+  arrange(desc(.interaction)) %>% 
+  head()
+##        .feature .interaction
+## 1  First_Flr_SF   0.13917718
+## 2  Overall_Qual   0.11077722
+## 3  Kitchen_Qual   0.10531653
+## 4 Second_Flr_SF   0.10461824
+## 5      Lot_Area   0.10389242
+## 6   Gr_Liv_Area   0.09833997
+
+plot(interact)
+```
+
+![](chapter-img/16_chapter/07-one-all-interactions.png)
+
+
+**2 features**
+
+```{r 16-2ways-interactions}
+interact_2way <- Interaction$new(components_iml, feature = "First_Flr_SF")
+
+interact_2way$results %>% 
+  arrange(desc(.interaction)) %>% 
+  top_n(10)
+##                      .feature .interaction
+## 1   Overall_Qual:First_Flr_SF   0.14385963
+## 2     Year_Built:First_Flr_SF   0.09314573
+## 3   Kitchen_Qual:First_Flr_SF   0.06567883
+## 4      Bsmt_Qual:First_Flr_SF   0.06228321
+## 5  Bsmt_Exposure:First_Flr_SF   0.05900530
+## 6  Second_Flr_SF:First_Flr_SF   0.05747438
+## 7  Kitchen_AbvGr:First_Flr_SF   0.05675684
+## 8    Bsmt_Unf_SF:First_Flr_SF   0.05476509
+## 9     Fireplaces:First_Flr_SF   0.05470992
+## 10  Mas_Vnr_Area:First_Flr_SF   0.05439255
+```
+
+
+**Interactions and response variable relation**
+
+By playing attention to the slope differences we can see that:
+
+- Properties with "good" or lower `Overall_Qual` values **tend to level off their `Sale_Prices`** as `First_Flr_SF` increases, more so than properties with really strong `Overall_Qual values`.
+
+- Properties with "very good" `Overall_Qual` tend to experience a much larger increase in **Sale_Price** as **First_Flr_SF** increases from 1500–2000, compared to most other properties.
+
+```{r 16-interaction-2way-pdp}
+interaction_pdp <- Partial$new(
+  components_iml, 
+  c("First_Flr_SF", "Overall_Qual"), 
+  ice = FALSE, 
+  grid.size = 20
+) 
+plot(interaction_pdp)
+```
+
+![](chapter-img/16_chapter/08-2way-pdp.png)
+
+### Alternatives
+
+- **PDP-based variable importance measure** implemented in the `vip::vint()` function.
+
+- Max Kuhn and Kjell Johnson give some strategys to find interactions:
+
+  - **Expert-selected** interactions should be the first to be explored as they might find complex higher-order interactions.
+  
+  - **Brute-Force Approach** for data sets that have a small to moderate number of predictors.
+    - *Simple Screening* of nested statistical models.
+    - *Penalized Regression*
+    
+  - **Two-stage Modeling and Guiding Principles**
+    - Start training a model that does not account for interaction effects.
+    - Based on the results follow on the next strategies to explain the renamining variation using **2-way** interactions as **three-way** and beyond are almost impossible to interpret, rarely capture a significant amount of response variation and we only need a fraction of the possible effects to explain a significant amount of response variation.
+      - **Strong heredity** requires that for an interaction to be considered in a model, *all lower-level preceding terms* must explain a significant amount of response variation.
+      - **Weak heredity** relaxes this requirement and would consider *any possible interaction with the significant factor*.
+
+![](chapter-img/16_chapter/09-interaction-effect-heredity.png)
+      
+  - **Tree-based Methods** as each subsequent node can be thought of as representation of a *localized interaction between the previous node and the current node*.
+    - Starting training a **tree-based model**.
+    - Estimating the **predictors' importance**.
+    - Using must **important predictors** to validate **2-way** interactions using **partial depend plots** or a simpler model like **lineal regression**, as tree-based methods will use predictors involved important interactions multiple times throughout multiple trees to uncover the relationship with the response.
+    
+![](chapter-img/16_chapter/10-tree-interactions-two-predictors.svg)
+
+```{r 16-node-4}
+node_4 <- I(x1 < 0.655) * I(x2 < 0.5) * I(x2 < 0.316) * 0.939
+```
+
+
+## LIME
+
+*Local Interpretable Model-agnostic Explanations (LIME)* is an algorithm that helps explain individual predictions which assumes that every **complex model is linear on a local scale** after applying the next steps:
+
+1. **Permute** your training data to create new data points that are similar to the original one, but with some changes in the feature values.
+2. Compute **proximity measure** (e.g., 1 - distance) between the observation of interest and each of the permuted observations.
+3. Apply selected machine learning model to **predict outcomes of permuted data**.
+4. Select $m$ number of features to best describe predicted outcomes.
+5. **Fit a simple model** (LASSO) to the permuted data, explaining the complex model outcome with $m$ features from the permuted data weighted by its similarity to the original observation.
+6. Use the resulting **feature weights** to explain local behavior.
+
+![Source: https://ema.drwhy.ai/LIME.html](chapter-img/16_chapter/13-lime_introduction.png)
+
+### Implementation
+
+In `R` the algorithm has been written in `iml`, `lime` and `DALEX`. Let's use the `iml` one:
+
+1. Create a list that contains the fitted machine learning model and the feature distributions for the training data. 
+
+```{r 16-explainer-lime }
+# Create explainer object
+components_lime <- lime::lime(
+  x = features,
+  model = ensemble_tree, 
+  n_bins = 10
+)
+
+class(components_lime)
+## [1] "data_frame_explainer" "explainer"            "list"
+
+summary(components_lime)
+##                      Length Class              Mode     
+## model                 1     H2ORegressionModel S4       
+## preprocess            1     -none-             function 
+## bin_continuous        1     -none-             logical  
+## n_bins                1     -none-             numeric  
+## quantile_bins         1     -none-             logical  
+## use_density           1     -none-             logical  
+## feature_type         80     -none-             character
+## bin_cuts             80     -none-             list     
+## feature_distribution 80     -none-             list
+```
+
+
+2. Perform the LIME algorithm using the `lime::explain()` function on the observation(s) of interest.
+
+```{r 16-lime_explain}
+# Use LIME to explain previously defined instances: high_ob and low_ob
+lime_explanation <- lime::explain(
+  # Observation(s) you want to create local explanations for
+  x = rbind(high_ob, low_ob), 
+  # Takes the explainer object created by lime::lime()
+  explainer = components_lime, 
+  # The number of permutations to create for each observation in x
+  n_permutations = 5000,
+  # The distance function to use `?dist()`
+  dist_fun = "gower",
+  # the distance measure to a similarity score
+  kernel_width = 0.25,
+  # The number of features to best describe
+  # the predicted outcomes
+  n_features = 10, 
+  feature_select = "highest_weights"
+)
+
+glimpse(lime_explanation)
+## Observations: 20
+## Variables: 11
+## $ model_type       <chr> "regression", "regression", "regression", "regr…
+## $ case             <chr> "1825", "1825", "1825", "1825", "1825", "1825",…
+## $ model_r2         <dbl> 0.41661172, 0.41661172, 0.41661172, 0.41661172,…
+## $ model_intercept  <dbl> 186253.6, 186253.6, 186253.6, 186253.6, 186253.…
+## $ model_prediction <dbl> 406033.5, 406033.5, 406033.5, 406033.5, 406033.…
+## $ feature          <chr> "Gr_Liv_Area", "Overall_Qual", "Total_Bsmt_SF",…
+## $ feature_value    <int> 3627, 8, 1930, 35760, 1796, 1831, 3, 14, 1, 3, …
+## $ feature_weight   <dbl> 55254.859, 50069.347, 40261.324, 20430.128, 193…
+## $ feature_desc     <chr> "2141 < Gr_Liv_Area", "Overall_Qual = Very_Exce…
+## $ data             <list> [[Two_Story_1946_and_Newer, Residential_Low_De…
+## $ prediction       <dbl> 663136.38, 663136.38, 663136.38, 663136.38, 663…
+
+plot_features(lime_explanation, ncol = 1)
+```
+
+![](chapter-img/16_chapter/11-first-lime-fit-1.png)
+
+3. Tune the LIME algorithm.
+
+```{r 16-lime-tuned}
+ # Tune the LIME algorithm a bit
+lime_explanation2 <- explain(
+  x = rbind(high_ob, low_ob), 
+  explainer = components_lime, 
+  n_permutations = 5000,
+  dist_fun = "euclidean",
+  kernel_width = 0.75,
+  n_features = 10, 
+  feature_select = "lasso_path"
+)
+
+# Plot the results
+plot_features(lime_explanation2, ncol = 1)
+```
+![](chapter-img/16_chapter/12-lime-explain2-1.png)
+
+## Shapley values
+
+This method observes how the prediction changes for **each possible subset of features** and then combine these changes to form a unique contribution for each feature value.
+
+To compute the approximate Shapley contribution of feature $x_j$ to $x$ we need to repeat the next process several times (e.g., 10–100) for each feature/observation combination and the results are averaged together.
+
+The aggregated Shapley values ($\phi$ = phi) represent the contribution of each feature towards a predicted value compared to the average prediction for the data set.
+
+A. We sample the training data.
+
+B. We create two copies of an individually sampled row and randomize the order of the features.
+
+  - Then in one copy we include all values from the observation of interest for the values from the first column feature up to and including  $X_1$. We then include the values from the sampled row for all the other features. 
+  
+  - In the second copy, we include all values from the observation of interest for the values from the first column feature up to but not including $X_1$. We use values from the sample row for $X_1$ and all the other features.
+  
+C. We apply our model to both copies of this row and in step.
+
+D. We compute the difference between the predicted outputs and calculate the mean of random samples.
+
+![](chapter-img/16_chapter/14-approx-shapley-idea.png)
+
+### Implementation
+
+In `R` the algorithm has been written in `iml` and `fastshap`. Let's use the `iml` one:
+
+```{r 16-shapley-high}
+# Compute (approximate) Shapley values
+(
+  shapley <- Shapley$new(
+    components_iml,
+    x.interest = high_ob,
+    sample.size = 1000
+  )
+)
+## Interpretation method:  Shapley 
+## Predicted value: 663136.380000, Average prediction: 181338.963590 (diff = 481797.416410)
+## 
+## Analysed predictor: 
+## Prediction task: unknown 
+## 
+## 
+## Analysed data:
+## Sampling from data.frame with 2199 rows and 80 columns.
+## 
+## Head of results:
+##        feature         phi      phi.var
+## 1  MS_SubClass  1746.38653 4.269700e+07
+## 2    MS_Zoning   -24.01968 3.640500e+06
+## 3 Lot_Frontage  1104.17628 7.420201e+07
+## 4     Lot_Area 15471.49017 3.994880e+08
+## 5       Street     1.03684 6.198064e+03
+## 6        Alley    41.81164 5.831185e+05
+##                          feature.value
+## 1 MS_SubClass=Two_Story_1946_and_Newer
+## 2    MS_Zoning=Residential_Low_Density
+## 3                     Lot_Frontage=118
+## 4                       Lot_Area=35760
+## 5                          Street=Pave
+## 6                Alley=No_Alley_Access
+
+# Plot results
+plot(shapley)
+```
+
+![](chapter-img/16_chapter/15-shapley-high-value.png)
+
+```{r 16-shapley-low}
+# Reuse existing object
+shapley$explain(x.interest = low_ob)
+
+# Plot results
+shapley$results %>%
+  top_n(25, wt = abs(phi)) %>%
+  ggplot(aes(phi, reorder(feature.value, phi), color = phi > 0)) +
+  geom_point(show.legend = FALSE)
+```
+
+![](chapter-img/16_chapter/16-shapley-low-value.png)
+
+
+## Localized step-wise procedure
+
+Observing only single feature effects at a time implies that dependencies between features are not taken into account. That could produce **inaccurate and misleading explanations** of the model’s internal logic.
+
+### Implementation
+
+Source: https://ema.drwhy.ai/iBreakDown.html
+
+```{r 16-break-down-data, eval=TRUE}
+titanic_imputed <- archivist::aread("pbiecek/models/27e5c")
+titanic_rf <- archivist:: aread("pbiecek/models/4e0fc")
+(henry <- archivist::aread("pbiecek/models/a6538"))
+```
+
+```{r 16-break-down-explaner, eval=TRUE}
+library("DALEX")
+library("randomForest")
+
+explain_rf <- DALEX::explain(
+  model = titanic_rf,  
+  data = titanic_imputed[, -9],
+  y = titanic_imputed$survived == "yes", 
+  label = "Random Forest"
+)
+
+bd_rf <- predict_parts(
+  explainer = explain_rf,
+  new_observation = henry,
+  type = "break_down_interactions"
+)
+
+
+bd_rf
+```
+
+```{r 16-break-down-plot, eval=TRUE}
+plot(bd_rf)
+```
+
+```{r 16-stop-h2o}
 h2o::h2o.shutdown(prompt = FALSE)
 ```
 
