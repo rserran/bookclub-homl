@@ -11,7 +11,7 @@ As we read, we are producing [notes about the book](https://r4ds.io/homl).
 
 If you would like to present, please see the sign-up sheet for your cohort (linked below, and pinned in the [#book_club-homl](https://rfordatascience.slack.com/archives/C04RXLFMQKZ) channel on Slack)!
 
-- [Cohort 1](https://docs.google.com/spreadsheets/d/1Kbab0u-wT2QwtSA_XfP8UWon3jbZ-8khDSBeWLQzhIo/edit?usp=sharing) (started 2023-04-02, facilitated by Keuntae Kim): [Sundays, 6:00 AM CST/CDT](https://www.timeanddate.com/worldclock/converter.html?iso=20230402T110000&p1=24&p2=1440&p3=179) | [meeting videos](https://youtube.com/playlist?list=PL3x6DOfs2NGj-lXgRsu8ks1rAkwZarT7e)
+- Cohort 1 (started 2023-04-02, finished 2023-12-17, facilitated by Keuntae Kim): [meeting videos](https://youtube.com/playlist?list=PL3x6DOfs2NGj-lXgRsu8ks1rAkwZarT7e)
 
 <hr>
 

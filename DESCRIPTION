@@ -15,6 +15,7 @@ Imports:
     caret,
     DALEX,
     DataExplorer,
+    DiagrammeR,
     doParallel,
     dplyr,
     earth,
