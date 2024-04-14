@@ -1,15 +1,15 @@
-# R4DS Hands-On Machine Learning with R Book Club
+# DSLC Hands-On Machine Learning with R Book Club
 
-Welcome to the R4DS Hands-On Machine Learning with R Book Club!
+Welcome to the DSLC Hands-On Machine Learning with R Book Club!
 
 We are working together to read [_Hands-On Machine Learning with R_](https://bradleyboehmke.github.io/HOML/) by Bradley Boehmke & Brandon Greenwell (copyright 2020-02-01).
-If you would like a print version, please consider purchasing it using our [Amazon Affiliates link](https://amzn.to/3Jc6TLq). All profits from purchases through that link go toward maintaining the R4DS Online Learning Community.
-Join the [#book_club-homl](https://rfordatascience.slack.com/archives/C04RXLFMQKZ) channel on the [R4DS Slack](https://r4ds.io/join) to participate.
-As we read, we are producing [notes about the book](https://r4ds.io/homl).
+If you would like a print version, please consider purchasing it using our [Amazon Affiliates link](https://amzn.to/3Jc6TLq). All profits from purchases through that link go toward maintaining the Data Science Learning Community.
+Join the [#book_club-homl](https://dslcio.slack.com/archives/C04RXLFMQKZ) channel on the [DSLC Slack](https://dslc.io/join) to participate.
+As we read, we are producing [notes about the book](https://dslc.io/homl).
 
 ## Meeting Schedule
 
-If you would like to present, please see the sign-up sheet for your cohort (linked below, and pinned in the [#book_club-homl](https://rfordatascience.slack.com/archives/C04RXLFMQKZ) channel on Slack)!
+If you would like to present, please see the sign-up sheet for your cohort (linked below, and pinned in the [#book_club-homl](https://dslcio.slack.com/archives/C04RXLFMQKZ) channel on Slack)!
 
 - Cohort 1 (started 2023-04-02, finished 2023-12-17, facilitated by Keuntae Kim): [meeting videos](https://youtube.com/playlist?list=PL3x6DOfs2NGj-lXgRsu8ks1rAkwZarT7e)
 
@@ -40,7 +40,7 @@ Do these steps each time you present another chapter:
 10. When your PR has been accepted ("merged"), `usethis::pr_finish()` to close out your branch and prepare your local repository for future work.
 11. Now that your local copy is up-to-date with the main repo, you need to update your remote fork. Run `gert::git_push("origin")` or click the `Push` button on the `Git` tab of Rstudio.
 
-When your PR is checked into the main branch, the bookdown site will rebuild, adding your slides to [this site](https://r4ds.io/homl).
+When your PR is checked into the main branch, the bookdown site will rebuild, adding your slides to [this site](https://dslc.io/homl).
 
 
 ## Code of Conduct
